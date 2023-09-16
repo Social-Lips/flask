@@ -1,1 +1,11 @@
-runtime:python311
+runtime: python311
+entrypoint: python3 server.py
+
+env_variables:
+  # Add any environment variables your application needs here
+  # Example:
+  
+
+handlers:
+- url: /.*
+  script: auto
