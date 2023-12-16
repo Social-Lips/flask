@@ -3,17 +3,149 @@ import firebase_admin
 from firebase_admin import credentials, storage
 import cv2
 from matplotlib import pyplot as plt
-import mediapipe as mp
+
 import numpy as np
-import tensorflow as tf
+
 import datetime
 import os
+from pymongo import MongoClient
+from bson import ObjectId
+from urllib.parse import quote
+
+
+
+
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 cred = credentials.Certificate("./social-lips-firebase-adminsdk-c28zn-d607a10c33.json")
 firebase_admin.initialize_app(cred)
 
+
 app = Flask(__name__)
+# app.config['MONGO_URI'] = 'mongodb+srv://ishan:1998@cluster0.zhsvvlw.mongodb.net/?retryWrites=true&w=majority'
+# mongo = MongoClient(app.config['MONGO_URI'])
+# db = mongo.test
+def get_video(file_id):
+    mongo_uri = "mongodb+srv://ishan:1998@cluster0.zhsvvlw.mongodb.net/?retryWrites=true&w=majority"
+    
+    client = MongoClient(mongo_uri)
+    
+    # Specify the database and collection
+    db = client.test
+    collection = db.posts
+    
+    # Convert the file_id string to ObjectId
+    object_id = ObjectId(file_id)
+
+    # Prepare the query
+    query = {"_id": object_id}
+    
+    # Fetch the document
+    result = collection.find_one(query)
+
+    # Check if the document was found
+    if result:
+        img_url = result.get("img_url", "")
+        print(f"img_url for file_id {file_id}: {img_url}")
+        return img_url
+    else:
+        print(f"No document found with file_id {file_id}")
+
+    # Close the MongoDB connection
+    client.close()
+
+
+def show_all_posts():
+    # Replace the following connection string with your MongoDB connection string
+    mongo_uri = "mongodb+srv://ishan:1998@cluster0.zhsvvlw.mongodb.net/?retryWrites=true&w=majority"
+    
+    try:
+        # Connect to MongoDB
+        client = MongoClient(mongo_uri)
+        
+        # Specify the database and collection
+        db = client.test
+        collection = db.posts
+        
+        # Fetch all posts
+        all_posts = collection.find()
+
+        # Check if there are documents in the collection
+        if collection.count_documents({}) == 0:
+            print("No documents found in the 'posts' collection.")
+        else:
+            # Print each document
+            for post in all_posts:
+                print(post)
+        
+        # Close the MongoDB connection
+        client.close()
+    
+    except Exception as e:
+        print(f"Error: {e}")
+
+
+
+
+# Call the function to show all posts
+
+
+def update_subtitle_status(file_id):
+    # Replace the following connection string with your MongoDB connection string
+    mongo_uri = "mongodb+srv://ishan:1998@cluster0.zhsvvlw.mongodb.net/?retryWrites=true&w=majority"
+    
+    # Connect to MongoDB
+    client = MongoClient(mongo_uri)
+    
+    # Specify the database and collection
+    db = client.test
+    collection = db.posts
+    
+
+
+
+    
+    # Convert the file_id string to ObjectId
+    object_id = ObjectId(file_id)
+
+    # Prepare the query
+    query = {"_id": object_id}
+    
+    # Prepare the update
+    update = {"$set": {"subtitle_status": "generated"}}
+
+    # Perform the update
+    result = collection.update_one(query, update)
+    
+    # Check if the update was successful
+    if result.modified_count > 0:
+        print(f"Subtitle status updated for file_id {file_id}")
+    else:
+        print(f"No document found with file_id {file_id}")
+
+    # Close the MongoDB connection
+    client.close()
+
+
+
+
+def generate_signed_url(bucket_name, blob_name, expiration):
+    storage_client = storage.bucket(bucket_name)
+    blob = storage_client.blob(blob_name)
+
+    # Generate a signed URL valid for the specified duration
+    signed_url = blob.generate_signed_url(expiration=expiration)
+
+    return signed_url
+
+def get_video_url(file_id):
+    bucket_name = "social-lips.appspot.com"  # Replace with your GCS bucket name
+    blob_name = f"posts/video/{file_id}.mp4"
+    expiration_time = 300  # Adjust the expiration time (in seconds) as needed
+
+    signed_url = generate_signed_url(bucket_name, blob_name, expiration_time)
+
+    return signed_url
 
 # Function to download a video from Firebase Storage
 def download_video(file_id, save_directory):
@@ -108,6 +240,7 @@ def download_file(file_id):
 
     try:
         save_directory = "videos/"
+        print(get_video_url(file_id))
         video_file_path = download_video(file_id, save_directory)
         subtitle_file_path = create_subtitle_file(video_file_path)
         destination_blob_name = f"posts/subtitles/{os.path.basename(video_file_path)}.vtt"
@@ -116,6 +249,8 @@ def download_file(file_id):
         # Clean up: Remove the local VTT and video files
         os.remove(subtitle_file_path)
         os.remove(video_file_path)
+        file_id_to_update = "652bf32459fbeea9aea09f1f"
+        update_subtitle_status(file_id_to_update)
 
         return f"Subtitles uploaded to Firebase Storage as {destination_blob_name}"
     except Exception as e:
@@ -144,6 +279,11 @@ def upload_file():
         return "File uploaded successfully"
     except Exception as e:
         return str(e), 500
+@app.route('/mongo', methods=['GET'])
+def mongo():
+        file_id_to_update = "652bf32459fbeea9aea09f1f"
+        get_video(file_id_to_update)
+
 @app.route('/model', methods=['GET'])
 def model():
     # 1. New detection variables
@@ -214,6 +354,18 @@ def model():
         cap.release()
         cv2.destroyAllWindows()
         return "model"
+@app.route('/posts/<string:post_id>', methods=['GET'])
+def get_post(post_id):
+    try:
+        collection = db['posts']  # Replace 'posts' with your collection name
+        post = collection.find_one({"_id": ObjectId(post_id)})
+        if post:
+            del post['_id']
+            return jsonify({"post": post})
+        else:
+            return jsonify({"message": "Post not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
 
