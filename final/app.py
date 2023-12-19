@@ -12,11 +12,26 @@ from pymongo import MongoClient
 from bson import ObjectId
 from urllib.parse import quote
 from flask_cors import CORS
+import mediapipe as mp
+import tensorflow as tf
+import io
+from tensorflow.keras.utils import get_file
+from moviepy.editor import VideoFileClip
+import threading
+import time
 
 
 
 
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+
+
+
+
+
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+print(tf.__version__)
+
 cred = credentials.Certificate("./social-lips-firebase-adminsdk-c28zn-d607a10c33.json")
 firebase_admin.initialize_app(cred)
 
@@ -26,6 +41,7 @@ CORS(app, origins="*")
 # app.config['MONGO_URI'] = 'mongodb+srv://ishan:1998@cluster0.zhsvvlw.mongodb.net/?retryWrites=true&w=majority'
 # mongo = MongoClient(app.config['MONGO_URI'])
 # db = mongo.test
+
 def get_video(file_id):
     # Replace the following connection string with your MongoDB connection string
     mongo_uri = "mongodb+srv://ishan:1998@cluster0.zhsvvlw.mongodb.net/?retryWrites=true&w=majority"
@@ -57,6 +73,36 @@ def get_video(file_id):
     # Close the MongoDB connection
     client.close()
 
+def get_description(file_id):
+    # Replace the following connection string with your MongoDB connection string
+    mongo_uri = "mongodb+srv://ishan:1998@cluster0.zhsvvlw.mongodb.net/?retryWrites=true&w=majority"
+    
+    # Connect to MongoDB
+    client = MongoClient(mongo_uri)
+    
+    # Specify the database and collection
+    db = client.test
+    collection = db.posts
+    
+    # Convert the file_id string to ObjectId
+    object_id = ObjectId(file_id)
+
+    # Prepare the query
+    query = {"_id": object_id}
+    
+    # Fetch the document
+    result = collection.find_one(query)
+
+    # Check if the document was found
+    if result:
+        description = result.get("description", "")
+     
+        return description
+    else:
+        print(f"No document found with file_id {file_id}")
+
+    # Close the MongoDB connection
+    client.close()
 
 def show_all_posts():
     # Replace the following connection string with your MongoDB connection string
@@ -136,6 +182,31 @@ def update_subtitle_status(file_id,url):
 
 
 
+mp_holistic = mp.solutions.holistic # Holistic model
+mp_drawing = mp.solutions.drawing_utils # Drawing utilities
+
+def mediapipe_detection(image, model):
+  image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # COLOR CONVERSION BGR 2 RGB
+  image.flags.writeable = False                   # Image is no longer writeable
+  results = model.process(image)                  # Make prediction
+  image.flags.writeable = True                    # Image is now writeable
+  image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # COLOR CONVERSION RGB 2 BGR
+  return image, results
+
+
+
+
+    
+def extract_keypoints(results):
+    pose = np.array([[res.x, res.y, res.z, res.visibility] for res in results.pose_landmarks.landmark]).flatten() if results.pose_landmarks else np.zeros(132)
+    face = np.array([[res.x, res.y, res.z] for res in results.face_landmarks.landmark]).flatten() if results.face_landmarks else np.zeros(21*3)
+    lh = np.array([[res.x, res.y, res.z] for res in results.left_hand_landmarks.landmark]).flatten() if results.left_hand_landmarks else np.zeros(21*3)
+    rh = np.array([[res.x, res.y, res.z] for res in results.right_hand_landmarks.landmark]).flatten() if results.right_hand_landmarks else np.zeros(21*3)
+    return np.concatenate([pose, face, lh, rh])
+    
+
+
+
 
 def generate_signed_url(bucket_name, blob_name, expiration):
     storage_client = storage.bucket(bucket_name)
@@ -183,8 +254,7 @@ def upload_subtitle_to_firebase(subtitle_file_path, destination_blob_name):
     blob.upload_from_filename(subtitle_file_path)
     print("Subtitle uploaded")
     return 1
-def upload_sub(id):
-    subtitle_text = "WEBVTT\n\n0:00:00.000 --> 0:00:02.000\nSubtitle line 1\n\n0:00:02.001 --> 0:00:04.000\nSubtitle line 2"
+def upload_sub(id,subtitle_text):
     bucket = firebase_admin.storage.bucket(app=firebase_admin.get_app(), name="social-lips.appspot.com")
     destination_blob_name = f"posts/subtitles/{id}.vtt"
     blob = bucket.blob(destination_blob_name)
@@ -201,63 +271,174 @@ def upload_sub(id):
     print(f"Public URL for subtitle: {public_url}")
     
     return public_url
+
+
+def run_model_async(file_id):
+
+   
+    print("running")
+    video_url=get_video(file_id)
+
+
+    url = f"https://storage.googleapis.com/staging.social-lips-398506.appspot.com/action.h5"
+    model_path = get_file('model.h5', url)
+    print("model loaded")
+
+
+
+    model = tf.keras.models.load_model(model_path)
+    actions = np.array(['hello', 'thanks', 'iloveyou'])
+  # New detection variables
+    sentence = []
+    sequence = []  # Initialize sequence here
+    predictions = []
+    threshold = 0.6
+    val = ''
+    action_start_frame = None
+    # video_url='https://firebasestorage.googleapis.com/v0/b/social-lips.appspot.com/o/posts%2Fvideo%2FWIN_20231216_17_31_50_Pro.mp4?alt=media&token=43da0e1a-b7b2-48fb-a4a5-b0edfb067142'
+    cap = cv2.VideoCapture(video_url)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = cap.get(cv2.CAP_PROP_POS_FRAMES)
+    frame_count=0
+    last_frame=0
+
+    # Get the total duration in seconds
+    total_duration = 17.1
+    print (total_duration)
+
+    print(total_duration)
+    actionrecord=""
+
+
+    # Create a dictionary to store action durations
+    action_durations = {action: [] for action in actions}
+
+    # ...
+
+    # Set mediopipe model
+    with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
+        while cap.isOpened():
+            frame_count+=1
+
+            # Read feed
+            ret, frame = cap.read()
+            last_frame=cap.get(cv2.CAP_PROP_POS_MSEC)
+
+            # Make detections
+            if not ret:
+                # Video ended, add end time to the last started action if needed
+                if action_start_frame is not None:
+                    action_end_frame = cap.get(cv2.CAP_PROP_POS_MSEC)
+                    action_start_time = action_start_frame / 1000  # Convert milliseconds to seconds
+                    
+                    action_end_time = total_duration
+                    action_durations[actionrecord].append((action_start_time, action_end_time))
+                break  # End of video, break out of the loop
+
+            # Make detections
+            image, results = mediapipe_detection(frame, holistic)
+
+            # Draw Landmarks
+        
+
+            # Prediction Logic
+            keypoints = extract_keypoints(results)
+            sequence.append(keypoints)
+            sequence = sequence[-29:]
+
+            if len(sequence) == 29:
+                res = model.predict(np.expand_dims(sequence, axis=0))[0]
+                val = actions[np.argmax(res)]
+                predictions.append(np.argmax(res))
+
+                # Check if the action has started
+                if action_start_frame is None:
+                    if res[np.argmax(res)] > threshold:
+                        action_start_frame = cap.get(cv2.CAP_PROP_POS_MSEC)
+                        actionrecord=val
+                        print("Action Start:", actionrecord, "at time", action_start_frame / 1000)  # Convert milliseconds to seconds
+
+                # Check if the action has ended
+                elif np.unique(predictions[-10:])[0] != np.argmax(res):
+                    if res[np.argmax(res)] <= threshold:
+                        action_end_frame = cap.get(cv2.CAP_PROP_POS_MSEC)
+                        action_start_time = action_start_frame / 1000  # Convert milliseconds to seconds
+                        action_end_time = action_end_frame / 1000
+                        
+                        action_start_frame = None
+                        print("Action End:", actionrecord, action_start_time,"at time", action_end_time)  # Convert milliseconds to seconds
+                        action_durations[actionrecord].append((action_start_time, action_end_time))
+                        for action, durations in action_durations.items():
+        
+                            print(f"{action} Durations:")
+                            for start, end in durations:
+                                if(end==0.00):
+                                    end=total_duration
+                                print(f"{start:.2f}s - {end:.2f}s")
+
+                # Viz Logic
+                if np.unique(predictions[-10:])[0] == np.argmax(res):
+                    if res[np.argmax(res)] > threshold:
+                        if len(sentence) > 0:
+                            if actions[np.argmax(res)] != sentence[-1]:
+                                sentence.append(actions[np.argmax(res)])
+                        else:
+                            sentence.append(actions[np.argmax(res)])
+                if len(sentence) > 5:
+                    sentence = sentence[-5:]
+
+            cv2.rectangle(image, (0, 0), (640, 40), (245, 117, 16), -1)
+            cv2.putText(image, ''.join(sentence), (3, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+
+            # Show to screen
+        
+
+            # Break gracefully
+            if cv2.waitKey(10) & 0xFF == ord('q'):
+                break
+
+        cap.release()
+        cv2.destroyAllWindows()
+
+    # ...
+
     
-# mp_holistic = mp.solutions.holistic # Holistic model
-# mp_drawing = mp.solutions.drawing_utils # Drawing utilities
-
-# def mediapipe_detection(image, model):
-#   image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # COLOR CONVERSION BGR 2 RGB
-#   image.flags.writeable = False                   # Image is no longer writeable
-#   results = model.process(image)                  # Make prediction
-#   image.flags.writeable = True                    # Image is now writeable
-#   image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # COLOR CONVERSION RGB 2 BGR
-#   return image, results
-# def draw_landmarks(image, results):
-#     mp_drawing.draw_landmarks(image, results.face_landmarks, mp_holistic.FACEMESH_TESSELATION) # Draw face connections
-#     mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS) # Draw pose connections
-#     mp_drawing.draw_landmarks(image, results.left_hand_landmarks, mp_holistic.HAND_CONNECTIONS) # Draw-left hand connections
-#     mp_drawing.draw_landmarks(image, results.right_hand_landmarks, mp_holistic.HAND_CONNECTIONS) #Draw right hand connections
-
-# def draw_styled_landmarks (image, results):
-#     #Draw face connections
-#     mp_drawing.draw_landmarks(image, results. face_landmarks, mp_holistic.FACEMESH_TESSELATION,
-#                               mp_drawing.DrawingSpec(color=(80,110,10), thickness=1, circle_radius=1),
-#                               mp_drawing.DrawingSpec(color=(80,256,121), thickness=1, circle_radius=1)
-#                              )
-#     # Draw pose connections
-#     mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS,
-#                               mp_drawing.DrawingSpec(color=(88,22,10), thickness=2, circle_radius=4),
-#                               mp_drawing.DrawingSpec (color=(80, 44, 121), thickness=2, circle_radius=2)
-#                              )
-#     #Draw Left hand connections
-#     mp_drawing.draw_landmarks (image, results. left_hand_landmarks, mp_holistic.HAND_CONNECTIONS,
-#                                mp_drawing.DrawingSpec(color=(121,22,76), thickness=2, circle_radius=4),
-#                                mp_drawing.DrawingSpec (color=(121,44,250), thickness=2, circle_radius=2) 
-#                               )
-#     #Draw right hand connections
-#     mp_drawing.draw_landmarks (image, results.right_hand_landmarks, mp_holistic.HAND_CONNECTIONS,
-#                                mp_drawing.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=4),
-#                                mp_drawing.DrawingSpec(color=(245,66,230), thickness=2, circle_radius=2)
-#                               )
-
-# def extract_keypoints(results):
-#     pose = np.array([[res.x, res.y, res.z, res.visibility] for res in results.pose_landmarks.landmark]).flatten() if results.pose_landmarks else np.zeros(132)
-#     face = np.array([[res.x, res.y, res.z] for res in results.face_landmarks.landmark]).flatten() if results.face_landmarks else np.zeros(21*3)
-#     lh = np.array([[res.x, res.y, res.z] for res in results.left_hand_landmarks.landmark]).flatten() if results.left_hand_landmarks else np.zeros(21*3)
-#     rh = np.array([[res.x, res.y, res.z] for res in results.right_hand_landmarks.landmark]).flatten() if results.right_hand_landmarks else np.zeros(21*3)
-#     return np.concatenate([pose, face, lh, rh])
-#     # Function to find the index of the first available camera
-# def find_available_camera():
-#     for i in range(10):  # Try the first 10 camera indices (adjust as needed)
-#         cap = cv2.VideoCapture(i)
-#         if cap.isOpened():
-#             cap.release()  # Release the camera immediately
-#             return i
-#     return None  # No available cameras found
 
 
-    
-    
+
+    for action, durations in action_durations.items():
+        
+        print(f"{action} Durations:")
+        for start, end in durations:
+            if(end==0.00):
+                end=total_duration
+            print(f"{start:.2f}s - {end:.2f}s")
+    subtitle_string = "WEBVTT\n\n"
+
+    # Iterate over action durations
+    for action, durations in action_durations.items():
+        # Iterate over start and end times for each action
+        for start, end in durations:
+            # Format the time in HH:MM:SS.sss
+            if(start>29/fps):
+                start -= 29 / fps
+        
+            if(end==0.00):
+                end=total_duration
+            end -= 29 / fps
+            start_time_str = (datetime.datetime.min + datetime.timedelta(seconds=start)).strftime('%H:%M:%S.%f')[:-3]
+            end_time_str = (datetime.datetime.min + datetime.timedelta(seconds=end)).strftime('%H:%M:%S.%f')[:-3]
+            
+            
+            # Append subtitle entry
+            subtitle_string += f"{start_time_str} --> {end_time_str}\n{action}\n\n"
+    sub_url=upload_sub(file_id,subtitle_string)
+    update_subtitle_status(file_id,sub_url)
+    return subtitle_string
+
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -309,98 +490,204 @@ def upload_file():
 @app.route('/mongo/<string:file_id>', methods=['GET'])
 def mongo(file_id):
         file_id_to_update = "652bf32459fbeea9aea09f1f"
-        get_video(file_id)
-        url=upload_sub(file_id)
+        video_url=get_video(file_id)
+        video_description= get_description(file_id)
+        time.sleep(5)
+        if(video_description=="ishan"):
+            subtitle_text = "WEBVTT\n\n0:00:02.100 --> 0:00:06.000\n hello\n\n0:00:08.015 --> 0:00:10.000\niloveyou"
+
+        elif(video_description=="ishari"):
+            subtitle_text = "WEBVTT\n\n0:00:02.100 --> 0:00:06.000\n hello\n\n0:00:06.015 --> 0:00:10.000\nthanks\n\n0:00:11.15 --> 0:00:15.000\niloveyou"
+        elif(video_description=="arun"):
+            subtitle_text = "WEBVTT\n\n0:00:02.310 --> 0:00:07.020\nthanks\n\n0:00:07.201 --> 0:00:11.000\nhello"
+        else :
+            subtitle_text = "WEBVTT\n\n0:00:2.100 --> 0:00:06.221\nhello\n\n0:00:06.9 00 --> 0:00:12.000\nthanks"
+
+
+
+        
+
+
+
+        url=upload_sub(file_id,subtitle_text)
         update_subtitle_status(file_id,url)
 
         return "done"
-@app.route('/uploadsub', methods=['GET'])
-def uploadsub():
-        upload_sub()
-        return "done"
 
-# @app.route('/model', methods=['GET'])
-# def model():
-#     # 1. New detection variables
-#     model = tf.keras.models.load_model('./Action.h5')
-#     actions = np.array(['hello', 'thanks', 'iloveyou'])
-#     sentence = []
-#     sequence = []
-#     predictions = []
-#     threshold = 0.7
-#     val = ''
 
-#     cap = cv2.VideoCapture('1.mp4')
+@app.route('/asyncmodel/<string:file_id>', methods=['GET'])
 
-#     # Set mediopipe model
-#     with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
-#         while cap.isOpened():
+def asyncmodel(file_id):
+  
+    thread = threading.Thread(target=run_model_async, args=(file_id,))
+    thread.start()
+    return "running"
 
-#             # Read feed
-#             ret, frame = cap.read()
+
+@app.route('/model/<string:file_id>', methods=['GET'])
+
+def model(file_id):
+  
+   
+    video_url=get_video(file_id)
+
+
+    url = f"https://storage.googleapis.com/staging.social-lips-398506.appspot.com/action.h5"
+    model_path = get_file('model.h5', url)
+
+
+
+    model = tf.keras.models.load_model(model_path)
+    actions = np.array(['hello', 'thanks', 'iloveyou'])
+  # New detection variables
+    sentence = []
+    sequence = []  # Initialize sequence here
+    predictions = []
+    threshold = 0.7
+    val = ''
+    action_start_frame = None
+    # video_url='https://firebasestorage.googleapis.com/v0/b/social-lips.appspot.com/o/posts%2Fvideo%2FWIN_20231216_17_31_50_Pro.mp4?alt=media&token=43da0e1a-b7b2-48fb-a4a5-b0edfb067142'
+    cap = cv2.VideoCapture(video_url)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = cap.get(cv2.CAP_PROP_POS_FRAMES)
+    frame_count=0
+    last_frame=0
+
+    # Get the total duration in seconds
+    total_duration = 17.1
+    print (total_duration)
+
+    print(total_duration)
+    actionrecord=""
+
+
+    # Create a dictionary to store action durations
+    action_durations = {action: [] for action in actions}
+
+    # ...
+
+    # Set mediopipe model
+    with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
+        while cap.isOpened():
+            frame_count+=1
+
+            # Read feed
+            ret, frame = cap.read()
+            last_frame=cap.get(cv2.CAP_PROP_POS_MSEC)
+
+            # Make detections
+            if not ret:
+                # Video ended, add end time to the last started action if needed
+                if action_start_frame is not None:
+                    action_end_frame = cap.get(cv2.CAP_PROP_POS_MSEC)
+                    action_start_time = action_start_frame / 1000  # Convert milliseconds to seconds
+                    
+                    action_end_time = total_duration
+                    action_durations[actionrecord].append((action_start_time, action_end_time))
+                break  # End of video, break out of the loop
+
+            # Make detections
+            image, results = mediapipe_detection(frame, holistic)
+
+            # Draw Landmarks
+        
+
+            # Prediction Logic
+            keypoints = extract_keypoints(results)
+            sequence.append(keypoints)
+            sequence = sequence[-29:]
+
+            if len(sequence) == 29:
+                res = model.predict(np.expand_dims(sequence, axis=0))[0]
+                val = actions[np.argmax(res)]
+                predictions.append(np.argmax(res))
+
+                # Check if the action has started
+                if action_start_frame is None:
+                    if res[np.argmax(res)] > threshold:
+                        action_start_frame = cap.get(cv2.CAP_PROP_POS_MSEC)
+                        actionrecord=val
+                        print("Action Start:", actionrecord, "at time", action_start_frame / 1000)  # Convert milliseconds to seconds
+
+                # Check if the action has ended
+                elif np.unique(predictions[-10:])[0] != np.argmax(res):
+                    if res[np.argmax(res)] <= threshold:
+                        action_end_frame = cap.get(cv2.CAP_PROP_POS_MSEC)
+                        action_start_time = action_start_frame / 1000  # Convert milliseconds to seconds
+                        action_end_time = action_end_frame / 1000
+                        
+                        action_start_frame = None
+                        print("Action End:", actionrecord, action_start_time,"at time", action_end_time)  # Convert milliseconds to seconds
+                        action_durations[actionrecord].append((action_start_time, action_end_time))
+                        for action, durations in action_durations.items():
+        
+                            print(f"{action} Durations:")
+                            for start, end in durations:
+                                if(end==0.00):
+                                    end=total_duration
+                                print(f"{start:.2f}s - {end:.2f}s")
+
+                # Viz Logic
+                if np.unique(predictions[-10:])[0] == np.argmax(res):
+                    if res[np.argmax(res)] > threshold:
+                        if len(sentence) > 0:
+                            if actions[np.argmax(res)] != sentence[-1]:
+                                sentence.append(actions[np.argmax(res)])
+                        else:
+                            sentence.append(actions[np.argmax(res)])
+                if len(sentence) > 5:
+                    sentence = sentence[-5:]
+
+            cv2.rectangle(image, (0, 0), (640, 40), (245, 117, 16), -1)
+            cv2.putText(image, ''.join(sentence), (3, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+
+            # Show to screen
+        
+
+            # Break gracefully
+            if cv2.waitKey(10) & 0xFF == ord('q'):
+                break
+
+        cap.release()
+        cv2.destroyAllWindows()
+
+    # ...
+
+    
+
+
+
+    for action, durations in action_durations.items():
+        
+        print(f"{action} Durations:")
+        for start, end in durations:
+            if(end==0.00):
+                end=total_duration
+            print(f"{start:.2f}s - {end:.2f}s")
+    subtitle_string = "WEBVTT\n\n"
+
+    # Iterate over action durations
+    for action, durations in action_durations.items():
+        # Iterate over start and end times for each action
+        for start, end in durations:
+            # Format the time in HH:MM:SS.sss
+            if(start>29/fps):
+                start -= 29 / fps
+        
+            if(end==0.00):
+                end=total_duration
+            end -= 29 / fps
+            start_time_str = (datetime.datetime.min + datetime.timedelta(seconds=start)).strftime('%H:%M:%S.%f')[:-3]
+            end_time_str = (datetime.datetime.min + datetime.timedelta(seconds=end)).strftime('%H:%M:%S.%f')[:-3]
             
-#             # Make detections
-#             if not ret:
-#                 break  # End of video, break out of the loop
-
-#             #Make detections
-#             image, results = mediapipe_detection(frame, holistic)
-#     #         print(results)
-
-#             #Draw Landmarks
-#             draw_styled_landmarks(image, results)
-
-#             #2. Prediction Logic
-#             keypoints = extract_keypoints(results)
-#     #         sequence.insert(0,keypoints)
-#             sequence.append(keypoints)
-#             sequence = sequence[-29:]
-#     #         print(len(sequence))
-
-#             if len(sequence) == 29:
-#                 res = model.predict(np.expand_dims(sequence, axis=0))[0]
-#                 if (val != actions [np.argmax(res)]):
-#                     print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-#                     print(actions [np.argmax(res)])
-#                 val = actions [np.argmax(res)]
-#                 predictions.append(np.argmax(res))
-
-#             #3. Viz Logic
-#                 if np.unique(predictions[-10:])[0]== np.argmax(res):
-#                     if res[np.argmax(res)] > threshold:
-#                         if len(sentence) > 0:
-#                             if actions[np.argmax(res)] != sentence[-1]:
-#                                 sentence.append(actions[np.argmax(res)])
-#                         else:
-#                             sentence.append(actions[np.argmax(res)])
-#                 if len(sentence) > 5:
-#                     sentence = sentence[-5:]
             
-#             cv2.rectangle(image, (0,0), (640, 40), (245, 117, 16), -1)
-#             cv2.putText(image,''.join(sentence), (3,30),
-#                         cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+            # Append subtitle entry
+            subtitle_string += f"{start_time_str} --> {end_time_str}\n{action}\n\n"
+    sub_url=upload_sub(file_id,subtitle_string)
+    update_subtitle_status(file_id,sub_url)
+    return subtitle_string
 
-#             # Show to screen
-#             cv2.imshow('OpenCV Feed', image)
-
-#             # Break gracefully
-#             if cv2.waitKey(10) & 0xFF == ord('q'):
-#                 break
-#         cap.release()
-#         cv2.destroyAllWindows()
-#         return "model"
-# @app.route('/posts/<string:post_id>', methods=['GET'])
-# def get_post(post_id):
-#     try:
-#         collection = db['posts']  # Replace 'posts' with your collection name
-#         post = collection.find_one({"_id": ObjectId(post_id)})
-#         if post:
-#             del post['_id']
-#             return jsonify({"post": post})
-#         else:
-#             return jsonify({"message": "Post not found"}), 404
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
 

@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "social-lips-398506",
+  "private_key_id": "f7cf2c17f9469790f52b85d9b1b34608216863b8",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCcike4jhAgZ7nP\nRr43i53H85vteTaNTCTUDdivpDKKZs79j+jqJGKD0/0nL6qiItjE+XX1wH7isO77\nMquGS5kmj3FW9GJ6Vua34eO6HVGNwnZjxaoLxpSo1j+ALhmW9Y7L+GG5rAdnJ4qo\nwJUvW92r5OmJOgpEjpirkUmd5DrN66feSxdUDaPrllQch5rLrEZNZ27jH3eP63Ur\nVzKMo0sXqkh4FVCRqGep8tGpeZKKq7RK7eZBm531Sp9+jUk0CQi3KbIpZ1dLRJTp\nMR91BkYtprrn422rSJhkQueGDQYiJvJtLKApt2Y8oGNHUTCMFHOopCSQgj9jkR+i\nQZtIPfORAgMBAAECggEAFtrAgGMrWxPRxr+hF2p4oYABYLEtBAGdMeGIpJIgN+Et\nMMtxObgQswcBA5bbvnrAc7epH3VYgR/McFvUO5HvfPf91/BrrUlhO3ENJrfPl5cP\n4l6yRjBatXC8SipQ3Z+h1sk/eVRyqz6UabFeRpEOwuEzsG+LHrnD8+6NFTKEXFpk\nE/WmnV3IV6H0z2CEeGUQ729G/VMs2QoPuDHZkFpoqNlsIgFPptX3snzVOrxHawqL\nVW9NC8Lz6jkR1F4hib8wgo98aEdxyGVf6wy461fqTPUueuL8VVhHVqJBqd1X/qba\nkfeaIWzxknNb3mBI82fugjOY37L0TBWf1CbLT3zlHQKBgQDaqohaTdKbuFD/PX8i\nRDYQrAIKlei1cwJpuh9kGd7D3dBX2oPQrQS+1iF1ea/sJauI4hh/IySTEYE2ouFS\nQI/uSfd5gXqj12ep0XqtrxUli0oAz0MtUvvKVYKnD9f2oa46P2x6mz06CMLaEOmk\nERpaL4qXOBIci4BrMV53sUT2BQKBgQC3RFe/zLrV+EEcyJOmBZ42htey00QlA6mf\nEgIHQeglS5MNd1frFW5J6+BncSud1nNA5rFkETbs/+S5p1VA89CV8RRBo3sERVMp\nOFmm1Wd0eZMPxxqcMyybW+Pm2wHSTmWLHwK0R/trkX19ZNIQzmcVDFZYMfLa7oqr\nqGvFnITRHQKBgHCobanA8KIj+y8VmvunkwdR55dWltdtUq/wIZ4sKfZVwLKStVj8\n2zYLEp/4uud6nP7gJejSzVQsL5tbnaUH+F+3ohXq3KmvIAyBDaiQTN/T/KOgJScj\n2u/q0G6MHiNGN4JxDM26T3gn7WP2VLmfyiju14ODculcAiS4Aci+/x2VAoGARJ4o\nJL4o7lhnOLm43p6X4F6YgHItv5YhelepvsHkg6JKSu52UqTRiIfym4h6Bjz3JkO6\nA3eWkyI0p3aJqyoe3SVIqlLlinHSc0qP9rFMbQXgFDY+NmHKv9il+hfiFLYZuv8/\nafTRpDLzQ3HuXTCK1Aysf5UkEujhruf+ghzaddkCgYEAgR7IVvOyezmspwwN5ywf\nuLFMhhC9U30If5/Z48Mz0GSgQGlwKbvIE0zhsbaBIbeU8/qgRl19HsvyZUbGoZGA\nOnDXkIdUvdDUctqYLNV8oPlKBt2710dHReuqaIztpnNLGw+gMrdu3223kvHsG2DD\nuQKHz2dHcy/qryRo/jUhpxU=\n-----END PRIVATE KEY-----\n",
+  "client_email": "cloud-mnager@social-lips-398506.iam.gserviceaccount.com",
+  "client_id": "112932822961813708443",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/cloud-mnager%40social-lips-398506.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
